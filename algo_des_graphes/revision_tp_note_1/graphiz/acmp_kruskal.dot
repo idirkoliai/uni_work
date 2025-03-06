@@ -1,0 +1,19 @@
+graph G {
+  node [shape=diamond, style=filled, color=lightblue];
+  edge [color=red];
+  1;
+  7;
+  5;
+  6;
+  2;
+  3;
+  0;
+  4;
+  3 -- 5 [label="7"];
+  0 -- 2 [label="7"];
+  2 -- 3 [label="9"];
+  1 -- 7 [label="20"];
+  0 -- 1 [label="5"];
+  4 -- 6 [label="7"];
+  5 -- 6 [label="12"];
+}
