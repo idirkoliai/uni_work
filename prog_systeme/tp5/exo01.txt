@@ -1,0 +1,4 @@
+total 24
+-rwxr-xr-x 1 requiem requiem 17112  9 mars  12:53 exo01
+-rw-r--r-- 1 requiem requiem   391  9 mars  12:53 exo01.c
+-rw-r--r-- 1 requiem requiem     0  9 mars  12:49 exo01.txt
