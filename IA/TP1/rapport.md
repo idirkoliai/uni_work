@@ -36,3 +36,9 @@ essayez le neurone exemple du début. Que remarquez-vous ?
 * Question 2.7 Utiliser les autres jeux de données non_separable_*. Que remarquez vous ? D’après vous, pourquoi ?
     * **Les données non séparables ne peuvent pas être séparées par une droite.**
     * **Le modèle ne peut pas converger.**
+
+* Implémenter la fonction d’activation sigmoïde s(x) = 1
+1+e−x (créer une
+fonction sigmoid et afficher ses valeurs). Quelle est sa dérivée ? Pourquoi est-ce intéressant 
+de l’utiliser ?
+   
