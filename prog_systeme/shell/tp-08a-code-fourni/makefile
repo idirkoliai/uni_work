@@ -48,4 +48,4 @@ mrproper: clean
 
 test: $(EXEC)
 	@chmod u+x test
-	./test ./mysh
+	./test ./bin/mysh

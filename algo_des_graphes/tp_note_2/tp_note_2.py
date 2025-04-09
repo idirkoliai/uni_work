@@ -4,6 +4,7 @@ from dictionnaireadjacenceoriente import DictionnaireAdjacenceOriente as DAO
 from tas import TasArcs
 import os
 from collections import deque
+from heapq import heapify, heappush, heappop
 
 def dico_DAOP_to_graphviz_format(g:DAOP, filename: str) -> None:
     """
@@ -210,7 +211,7 @@ def Khan(G:DAOP):
     return res
         
 def fermeture_transitive(G:DAOP):
-    F = DAOP()
+    F = type(G)()
     for arc in G.arcs():
         F.ajouter_arc(arc[0],arc[1],arc[2])
     for u in F.sommets():
