@@ -193,3 +193,28 @@ addBook book lib = Library { getBookRecords = newBookRecords }
     f _ oldRecord = oldRecord { getShelvedBooks = S.insert newSerial (getShelvedBooks oldRecord) }
     br = M.findWithDefault (mkBookRecord book [] []) (getISBN book) (getBookRecords lib)
       
+
+emptyLibrary :: Library
+emptyLibrary = Library {getBookRecords = M.empty} 
+
+
+mkLibrary :: [Book] -> Library
+mkLibrary  books = foldr (\book -> addBook book ) myNewLib books
+  where 
+    myNewLib = emptyLibrary
+
+
+deleteBook :: ISBN -> Serial -> Library -> Library
+deleteBook isbn serial lib  = Library {getBookRecords = updatedLib }
+  where 
+    updatedLib = M.update delete isbn ( getBookRecords lib)
+    shelved = getShelvedBooks br
+    borrowed = getBorrowedBooks br
+    br = M.findWithDefault (mkBookRecord (mkBook isbn "" "") [] []) isbn (getBookRecords lib)
+    delete br
+      | S.null shelved = Nothing
+      | S.size shelved == 1 && S.member serial shelved = Nothing
+      | otherwise = 
+          Just (br { getShelvedBooks = S.delete serial shelved
+                   , getBorrowedBooks = borrowed })
+      

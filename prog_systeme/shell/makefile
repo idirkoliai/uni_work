@@ -2,13 +2,17 @@ CC=gcc
 LEX=flex
 YACC=bison
 CFLAGS=-c -Wall -Wextra -g
-LDFLAGS=-Wall -Wextra -g -ll -ly
+LDFLAGS=-Wall -Wextra -g -ll -lreadline
 SRC = src/
 INC = include/
 OBJ = obj/
 BIN = bin/
 EXEC=$(BIN)mysh
 
+ifeq ($(READLINE),1)
+	CFLAGS+= -DREADLINE
+	LDFLAGS+= -lreadline
+endif
 $(EXEC): $(OBJ)main.o $(OBJ)lexer.o $(OBJ)parser.o $(OBJ)joblist.o | $(OBJ)  $(BIN)
 	$(CC) -o $@ $^ $(LDFLAGS)
 

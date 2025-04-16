@@ -26,7 +26,26 @@
 %destructor { free($$); } WORD
 %destructor { delProc($$); } Command
 %destructor { delProcList($$); } Pipeline
-%destructor { delJob($$); } Job
+%destructor { delJob($$); } Jobif (job->pipeline->head->redin)
+  {
+    int in = try(open(job->pipeline->head->redin, O_RDONLY));
+    try(dup2(in, STDIN_FILENO));
+    try(close(in));
+  }
+  if (job->pipeline->head->redout)
+  {
+    int out;
+    if (job->pipeline->head->append)
+    {
+      out = try(open(job->pipeline->head->redout, O_WRONLY | O_CREAT | O_APPEND, 0644));
+    }
+    else
+    {
+      out = try(open(job->pipeline->head->redout, O_WRONLY | O_CREAT | O_TRUNC, 0644));
+    }
+    try(dup2(out, STDOUT_FILENO));
+    try(close(out));
+  }
 
 %%
 
