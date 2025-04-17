@@ -137,6 +137,14 @@ done <<'EOF' # each test: (1) title, (2) shell input, (3) expected output, (4) -
     sh -c 'sleep 0.1; echo Background' | cat & \\ echo Foreground
     Foreground \\ Background
     --
+    Adding to the job list
+    sleep 0.1 & \\ sleep 0.1 & \\ sleep 0.1 & \\ jobs >_test_ \\ wc -l <_test_
+    3
+    --
+    Adding and removing from the job list
+    true & \\ sleep 0.1 \\ jobs >/dev/null \\ sleep 0.1 & \\ sleep 0.1 & \\ jobs >_test_ \\ wc -l <_test_
+    2
+    --
 EOF
 
 # Tests based on shell exit status
@@ -178,6 +186,95 @@ done <<'EOF' # each test: (1) title, (2) shell input, (3) expected exit status, 
     Exit with status of killed command
     sh -c 'kill -KILL $$' \\ exit
     137
+    --
+EOF
+
+# Tests using ad-hoc C programs in interactive mode
+mainTemplate='
+    #include <signal.h>
+    #include <stdio.h>
+    #include <unistd.h>
+    int main(int argc, char **argv) { %s }'
+while read title && read -r program && read -r shellInput && read explanation; do
+    read separator # ignored
+    rm -f _testok_ _testprog_
+    program="$(printu "$program" | splitlines)"
+    shellInput="$(printu "$shellInput" | splitlines)"
+    printf "$mainTemplate" "$program" | cc -Wall -o _testprog_ -xc -
+    printf "%s\n" "$shellInput" | timeout -s KILL $maxtime script -c "$*" /dev/null | cat >/dev/null
+    if ! [ -f _testok_ ]; then
+        failed=$(($failed + 1))
+        printf "${bold}${yellow}== Test $(($failed + $passed)) (%s): " "$title"
+        printf "${bold}${red}failed\n"
+        printf "${normal}${yellow}-- C program _testprog_ (main function)\n"
+        printf "${normal}%s\n" "$program"
+        printf "${normal}${yellow}-- Shell input that is supposed to create the file _testok_\n"
+        printf "${normal}%s\n" "$shellInput"
+        printf "${normal}${yellow}-- Explanation\n"
+        printf "${normal}%s\n" "$explanation"
+    else
+        passed=$(($passed + 1))
+    fi
+done <<'EOF' # each test: (1) title, (2) program, (3) shell input, (4) explanation, (5) --
+    Ignore job-control signals
+    pid_t p = getppid(); \\ kill(p, SIGINT); \\ kill(p, SIGQUIT); \\ kill(p, SIGTSTP); \\ kill(p, SIGTTOU);
+    ./_testprog_ \\ touch _testok_
+    Job control: an interactive shell should ignore job-control signals.
+    --
+    Job in separate process group
+    if (getpgid(0) != getpgid(getppid())) fopen("_testok_", "w");
+    ./_testprog_
+    Job control: each job must run in a different process group than the shell.
+    --
+    Job has process group leader
+    if (getpgid(0) == getpid()) fopen("_testok_", "w");
+    ./_testprog_
+    Job control: one process per job must be a process group leader.
+    --
+    Start job in the BG
+    if (getpgid(0) != tcgetpgrp(STDOUT_FILENO)) fopen("_testok_", "w");
+    ./_testprog_ &
+    Job control: a job started with '&' must run in a background process group.
+    --
+    Detect when FG job stops
+    raise(SIGSTOP);
+    ./_testprog_ \\ touch _testok_ \\ exit
+    Job control: when the FG job is stopped, the shell must move itself to the FG.
+    --
+    Move job from BG to FG with fg %i
+    if (getpgid(0) == tcgetpgrp(STDOUT_FILENO)) return 1; \\ while (getpgid(0) != tcgetpgrp(STDOUT_FILENO)) {} \\ fopen("_testok_", "w");
+    ./_testprog_ & \\ sleep 0.1 \\ fg %1
+    Job control: fg must allow to move a job running in the BG to the FG.
+    --
+    Resume stopped job with fg %i
+    raise(SIGSTOP); \\ if (getpgid(0) == tcgetpgrp(STDOUT_FILENO)) fopen("_testok_", "w");
+    ./_testprog_ \\ fg %1
+    Job control: when job i is stopped, fg %i must resume it in the FG.
+    --
+    Resume stopped job with bg %i
+    raise(SIGSTOP); \\ if (getpgid(0) != tcgetpgrp(STDOUT_FILENO)) fopen("_testok_", "w");
+    ./_testprog_ \\ bg %1
+    Job control: when job i is stopped, bg %i must resume it in the BG.
+    --
+    Switch between two jobs with fg %i
+    raise(SIGSTOP); \\ if (argc > 1) fopen("_testok_", "w"); \\ else remove("_testok_");
+    ./_testprog_ \\ ./_testprog_ + \\ fg %1 \\ fg %2
+    Job control: fg can be given an argument specifying which job to move to the FG.
+    --
+    Switch between two jobs with fg
+    raise(SIGSTOP); \\ if (argc > 1) fopen("_testok_", "w"); \\ else remove("_testok_");
+    ./_testprog_ + \\ ./_testprog_ \\ fg \\ fg
+    Job control: without argument, fg must move the last active job to the FG.
+    --
+    Resume older job with bg %i
+    raise(SIGSTOP); \\ if (argc > 1) fopen("_testok_", "w"); \\ else remove("_testok_");
+    ./_testprog_ + \\ ./_testprog_ \\ bg %1 \\ exit
+    Job control: bg can be given an argument specifying which job to resume in the BG.
+    --
+    Resume last job with bg
+    raise(SIGSTOP); \\ if (argc > 1) fopen("_testok_", "w"); \\ else remove("_testok_");
+    ./_testprog_ \\ ./_testprog_ + \\ bg \\ exit
+    Job control: without argument, bg must resume the last active job in the BG.
     --
 EOF
 

@@ -60,6 +60,8 @@ static char *readCmdLine(void)
     add_history(result);
     // Remove trailing newline
   }
+  rl_outstream = stdin;
+
 #endif
   // Remove trailing newline
   len = strlen(result);

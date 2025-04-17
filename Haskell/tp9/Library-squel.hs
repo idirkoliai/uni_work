@@ -24,6 +24,10 @@ data BookRecord = BookRecord { getBook          :: Book
 
 newtype Library = Library { getBookRecords :: M.Map ISBN BookRecord }
 
+data BookStatus = Shelved | Borrowed deriving (Show)
+type BackupRecord = (Book, Serial, BookStatus)
+type Backup = [BackupRecord]
+
 instance Show Book where
   show b = L.intercalate ", " [getAuthor b, getTitle b, getISBN b]
 
@@ -44,6 +48,7 @@ instance Show Library where
                 | otherwise = show (getBook br) ++ " / " ++ show (S.toList s)
               accShelvedBooks'  = collect (getShelvedBooks  br) : accShelvedBooks
               accBorrowedBooks' = collect (getBorrowedBooks br) : accBorrowedBooks
+
 
 mkBook :: ISBN -> Title -> Author -> Book
 mkBook isbn t a = Book { getISBN = isbn, getTitle = t, getAuthor = a }
@@ -126,31 +131,31 @@ laCarteTerritoire1 = mkBook "978-2919695010" "La carte et le territoire" "M. Lev
 laCarteTerritoire2 :: Book
 laCarteTerritoire2 = mkBook "978-2290032039" "La carte et le territoire" "M. Houellebecq"
 
--- myScenario :: [(Action, ISBN, Serial)]
--- myScenario = 
---   [ (borrowBook, "978-2020336512", 1) -- borrow R. Merle, Madrapour, copy 1
---   , (borrowBook, "978-2266230919", 2) -- borrow R. Barjavel, La nuit des temps, copy 2
---   , (returnBook, "978-2020336512", 1) -- return R. Merle, Madrapour, copy 1
---   , (borrowBook, "978-2070367757", 1) -- borrow R. Merle, Week-end a Zuydcoote, copy 1
---   , (returnBook, "978-2266230919", 2) -- return R. Barjavel, La nuit des temps, copy 2,
---   , (returnBook, "978-2070367757", 1) -- return R. Merle, Week-end a Zuydcoote, copy 1
---   , (borrowBook, "978-2070401789", 1) -- borrow H. G. Wells, L'ile du docteur Moreau, copy 1
---   , (borrowBook, "978-2070421206", 1) -- borrow H. P. Lovecraft, Je suis d'ailleurs, copy 1
---   ]
+myScenario :: [(Action, ISBN, Serial)]
+myScenario = 
+  [ (borrowBook, "978-2020336512", 1) -- borrow R. Merle, Madrapour, copy 1
+  , (borrowBook, "978-2266230919", 2) -- borrow R. Barjavel, La nuit des temps, copy 2
+  , (returnBook, "978-2020336512", 1) -- return R. Merle, Madrapour, copy 1
+  , (borrowBook, "978-2070367757", 1) -- borrow R. Merle, Week-end a Zuydcoote, copy 1
+  , (returnBook, "978-2266230919", 2) -- return R. Barjavel, La nuit des temps, copy 2,
+  , (returnBook, "978-2070367757", 1) -- return R. Merle, Week-end a Zuydcoote, copy 1
+  , (borrowBook, "978-2070401789", 1) -- borrow H. G. Wells, L'ile du docteur Moreau, copy 1
+  , (borrowBook, "978-2070421206", 1) -- borrow H. P. Lovecraft, Je suis d'ailleurs, copy 1
+  ]
 
--- myEScenario :: [EAction]
--- myEScenario =
---   [ BorrowBook "978-2020336512" 1     -- borrow R. Merle, Madrapour, copy 1
---   , BorrowBook "978-2266230919" 2 -- borrow R. Barjavel, La nuit des temps, copy 2
---   , ReturnBook "978-2020336512" 1 -- return R. Merle, Madrapour, copy 1
---   , BorrowBook "978-2070367757" 1 -- borrow R. Merle, Week-end a Zuydcoote, copy 1
---   , ReturnBook "978-2266230919" 2 -- return R. Barjavel, La nuit des temps, copy 2,
---   , ReturnBook "978-2070367757" 1 -- return R. Merle, Week-end a Zuydcoote, copy 1
---   , BorrowBook "978-2070401789" 1 -- borrow H. G. Wells, L'ile du docteur Moreau, copy 1
---   , AddBook    "978-2070378418" "L'enchanteur" "R. Barjavel" -- add new book
---   , BorrowBook "978-2070421206" 1 -- borrow H. P. Lovecraft, Je suis d'ailleurs, copy 1
---   , DeleteBook "978-2070367757" 1
---   ]
+myEScenario :: [EAction]
+myEScenario =
+  [ BorrowBook "978-2020336512" 1     -- borrow R. Merle, Madrapour, copy 1
+  , BorrowBook "978-2266230919" 2 -- borrow R. Barjavel, La nuit des temps, copy 2
+  , ReturnBook "978-2020336512" 1 -- return R. Merle, Madrapour, copy 1
+  , BorrowBook "978-2070367757" 1 -- borrow R. Merle, Week-end a Zuydcoote, copy 1
+  , ReturnBook "978-2266230919" 2 -- return R. Barjavel, La nuit des temps, copy 2,
+  , ReturnBook "978-2070367757" 1 -- return R. Merle, Week-end a Zuydcoote, copy 1
+  , BorrowBook "978-2070401789" 1 -- borrow H. G. Wells, L'ile du docteur Moreau, copy 1
+  , AddBook    "978-2070378418" "L'enchanteur" "R. Barjavel" -- add new book
+  , BorrowBook "978-2070421206" 1 -- borrow H. P. Lovecraft, Je suis d'ailleurs, copy 1
+  , DeleteBook "978-2070367757" 1
+  ]
 
 
 lookupISBN :: ISBN -> Library -> Maybe (Book, Int, Int)
@@ -217,4 +222,53 @@ deleteBook isbn serial lib  = Library {getBookRecords = updatedLib }
       | otherwise = 
           Just (br { getShelvedBooks = S.delete serial shelved
                    , getBorrowedBooks = borrowed })
+
+borrowBook :: ISBN -> Serial -> Library -> Library
+borrowBook isbn serial lib = Library {getBookRecords = updatedLib }
+  where 
+    updatedLib = M.update borrow isbn ( getBookRecords lib)
+    shelved = getShelvedBooks br
+    borrowed = getBorrowedBooks br
+    br = M.findWithDefault (mkBookRecord (mkBook isbn "" "") [] []) isbn (getBookRecords lib)
+    borrow br 
+      |S.null shelved  || (not (S.member serial shelved))   = Just br
+      |otherwise = Just(BookRecord { getBook = getBook br
+                              , getShelvedBooks = S.delete serial shelved
+                              , getBorrowedBooks = S.insert serial borrowed })
       
+returnBook :: ISBN -> Serial -> Library -> Library
+returnBook isbn serial lib = Library {getBookRecords = updatedLib }
+  where 
+    updatedLib = M.update borrow isbn ( getBookRecords lib)
+    shelved = getShelvedBooks br
+    borrowed = getBorrowedBooks br
+    br = M.findWithDefault (mkBookRecord (mkBook isbn "" "") [] []) isbn (getBookRecords lib)
+    borrow br 
+      |S.null borrowed  || (not (S.member serial borrowed))   = Just br
+      |otherwise = Just(BookRecord { getBook = getBook br
+                              , getShelvedBooks = S.insert serial shelved
+                              , getBorrowedBooks = S.delete serial borrowed })
+
+
+executeScenario :: [(Action, ISBN, Serial)] -> Library -> Library
+executeScenario [] lib = lib
+executeScenario ((action, isbn, serial):actions) lib = executeScenario actions (action isbn serial lib)
+
+executeEScenario :: [EAction] -> Library -> Library
+executeEScenario [] lib = lib
+executeEScenario (action:actions) lib = executeEScenario actions (executeEAction action lib)
+  where
+    executeEAction action lib = case action of
+        DeleteBook isbn serial -> deleteBook isbn serial lib
+        AddBook isbn title author -> addBook (mkBook isbn title author) lib
+        BorrowBook isbn serial -> borrowBook isbn serial lib
+        ReturnBook isbn serial -> returnBook isbn serial lib
+  
+backupLibrary :: Library -> Backup
+backupLibrary lib = F.foldr f [] (M.elems (getBookRecords lib))
+  where
+    f br acc = shelvedBooks br ++ borrowedBooks br ++ acc
+      where
+        shelvedBooks br = map (\s -> (getBook br, s, Shelved)) (S.toList (getShelvedBooks br))
+        borrowedBooks br = map (\s -> (getBook br, s, Borrowed)) (S.toList (getBorrowedBooks br))
+  
