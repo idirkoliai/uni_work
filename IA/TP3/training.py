@@ -55,7 +55,7 @@ def run():
     training_data = datasets.FashionMNIST(
         root="data",
         train=True,
-        download=False,
+        download=True,
         transform=ToTensor()
     )
     # This is to perform an overfit by selecting only a few images.
@@ -65,7 +65,7 @@ def run():
     test_data = datasets.FashionMNIST(
         root="data",
         train=False,
-        download=True,
+        download=False,
         transform=ToTensor()
     )
 
@@ -78,12 +78,12 @@ def run():
 
     # Check if you can use GPU.
     use_gpu = torch.cuda.is_available()
-    if use_gpu:
-        device = torch.device('cuda')
-        print('GPU device detected')
-    else:
-        device = torch.device('cpu')
-        print('No GPU detected, using CPU')
+    #if use_gpu:
+    #    device = torch.device('cuda')
+    #    print('GPU device detected')
+    #else:
+    device = torch.device('cpu')
+    print('No GPU detected, using CPU')
 
      
     # Visualize data sample
@@ -104,34 +104,40 @@ def run():
     net = Net().to(device)
     print(net)
 
-    learning_rate = 5 * 1e-3
+    learning_rate = 1e-3
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 
-    epoch_count = 2
+    epoch_count = 5
     loss_batch_print = 1000
     for epoch in range(epoch_count):  # loop over the dataset multiple times
 
         running_loss = 0.0
+        total_loss = 0.0
+        # Iterate over data
         for i, data in tqdm.tqdm(enumerate(train_loader, 0)):
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels = data[0].to(device), data[1].to(device)
 
-            # zero the parameter gradients
+            # zero the parameter gradients 
             optimizer.zero_grad()
 
             # forward + backward + optimize
             outputs = net(inputs)
             loss = criterion(outputs, labels)
-            writer.add_scalar('Loss/train', loss, epoch)
             loss.backward()
             optimizer.step()
 
             # print statistics
             running_loss += loss.item()
+            total_loss += loss.item()
             if i > 0 and i % loss_batch_print == 0:    # print regularly
                 print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / loss_batch_print:.3f}')
+                writer.add_scalar('Loss/train', running_loss / loss_batch_print, epoch * training_size + i * batch_size)
+                #AVGloss
                 running_loss = 0.0
+        # Print the average loss for the epoch
+        writer.add_scalar('Loss/epoch', total_loss / len(train_loader), epoch)
         
         # Save at the end of the epoch.
         save_path = f'./checkpoint_{epoch}.pth'
