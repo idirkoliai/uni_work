@@ -155,6 +155,8 @@ def run():
                 _, predicted = torch.max(outputs.data, 1)
                 correct += (predicted == labels).sum().item()
                 total += batch_size
+                loss = criterion(outputs, labels)
+                writer.add_scalar('Loss/test', loss.item(), epoch * training_size + i * batch_size)
             print(f'Accuracy of the network on the {total} test images: {100 * correct // total} %')
     writer.flush()
     writer.close()
