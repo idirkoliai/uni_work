@@ -67,6 +67,7 @@ static char *readCmdLine(void)
   {
     result[len - 1] = '\0';
   }
+  rl_outstream = stderr;
   return result;
 }
 
@@ -116,21 +117,106 @@ int builtinExit(int argc, char **argv)
   exit(lastExitCode);
 }
 
+void jobs(JobList *list)
+{
+  Job *currentJob = list->head;
+  Job *prevJob = NULL;
+  Job *nextJob = NULL;
+
+  while (currentJob != NULL)
+  {
+    nextJob = currentJob->next;
+    int allTerminated = 1;
+    int anyStopped = 0;
+
+    // Vérifier chaque processus
+    for (Proc *proc = currentJob->pipeline->head; proc; proc = proc->next)
+    {
+      int status;
+      int ret = waitpid(proc->pid, &status, WNOHANG | WUNTRACED);
+
+      if (ret == 0)
+      {
+        allTerminated = 0; // Encore en cours
+      }
+      else if (WIFSTOPPED(status))
+      {
+        anyStopped = 1; // Processus suspendu
+      }
+    }
+
+    // Afficher l'état
+    if (anyStopped)
+    {
+      char message[256]; // Allocate space for the message (adjust size as necessary)
+      snprintf(message, sizeof(message), "[%d] stopped\n", currentJob->id);
+      write(STDOUT_FILENO, message, strlen(message));
+    }
+    else if (!allTerminated)
+    {
+      char message[256]; // Allocate space for the message (adjust size as necessary)
+      snprintf(message, sizeof(message), "[%d] running\n", currentJob->id);
+      write(STDOUT_FILENO, message, strlen(message));
+    }
+    else
+    {
+      char message[256]; // Allocate space for the message (adjust size as necessary)
+      snprintf(message, sizeof(message), "[%d] done\n", currentJob->id);
+      write(STDOUT_FILENO, message, strlen(message));
+    }
+
+    if (allTerminated && !anyStopped)
+    {
+      if (prevJob)
+      {
+        prevJob->next = nextJob;
+      }
+      else
+      {
+        list->head = nextJob;
+      }
+      if (nextJob)
+      {
+        nextJob->prev = prevJob;
+      }
+      delJob(currentJob);
+    }
+    else
+    {
+      prevJob = currentJob;
+    }
+
+    currentJob = nextJob;
+  }
+}
+
 static void redirections(Proc *proc, int pipefd[2], int prev_fd)
 {
   if (proc->redin)
   {
     int fd = try(open(proc->redin, O_RDONLY));
     dup2(fd, STDIN_FILENO);
-    close(fd);
-    close(prev_fd);
-    close(pipefd[0]);
+    try(close(fd));
+    if (prev_fd != -1)
+    {
+      close(prev_fd);
+    }
+    if (pipefd[0] != -1)
+    {
+      close(pipefd[0]);
+    }
   }
   else if (prev_fd != -1)
   {
     dup2(prev_fd, STDIN_FILENO);
-    close(prev_fd);
-    close(pipefd[0]);
+    if (prev_fd != -1)
+    {
+      close(prev_fd);
+    }
+    if (pipefd[0] != -1)
+    {
+      close(pipefd[0]);
+    }
   }
 
   if (proc->redout)
@@ -142,36 +228,94 @@ static void redirections(Proc *proc, int pipefd[2], int prev_fd)
       fd = try(open(proc->redout, O_WRONLY | O_CREAT | O_TRUNC, 0644));
     dup2(fd, STDOUT_FILENO);
     close(fd);
-    close(pipefd[1]);
+    if (pipefd[1] != -1)
+    {
+      close(pipefd[1]);
+    }
   }
   else if (proc->next)
   {
-    try(dup2(pipefd[1], STDOUT_FILENO));
-    try(close(pipefd[1]));
+    if (pipefd[1] != -1)
+    {
+      try(dup2(pipefd[1], STDOUT_FILENO));
+      try(close(pipefd[1]));
+    }
   }
 }
 
-void execJob(Job *job)
+void execJob(Job *job, JobList *list)
 {
   Proc *proc = job->pipeline->head;
   int prev_fd = -1; // previous read-end of the pipe
   int pipefd[2];
   int status;
-
-  for (; proc; proc = proc->next)
+  pipefd[0] = -1;
+  pipefd[1] = -1;
+  if (strcmp(job->pipeline->head->args->array[0], "exit") == 0)
   {
+    builtinExit(job->pipeline->head->args->size, job->pipeline->head->args->array);
+  }
+  else if (strcmp(job->pipeline->head->args->array[0], "cd") == 0)
+  {
+    builtinCD(job->pipeline->head->args->size, job->pipeline->head->args->array);
+    return;
+  }
+  if (strcmp(proc->args->array[0], "jobs") == 0)
+  {
+    // Save the original standard output (stdout)
+    int stdout_copy = dup(STDOUT_FILENO);
+    if (stdout_copy == -1)
+    {
+      perror("dup");
+      exit(1); // Handle error in duplicating the file descriptor
+    }
 
+    // Check if there's output redirection
+    if (proc->redout)
+    {
+      int fd;
+      // Open the file for writing
+      if (proc->append)
+        fd = try(open(proc->redout, O_WRONLY | O_CREAT | O_APPEND, 0644));
+      else
+        fd = try(open(proc->redout, O_WRONLY | O_CREAT | O_TRUNC, 0644));
+
+      // Redirect STDOUT to the file
+      dup2(fd, STDOUT_FILENO);
+      close(fd);
+    }
+
+    // Print the jobs to the redirected file or stdout
+    jobs(list);
+
+    // If there was output redirection, restore the original STDOUT
+    if (stdout_copy != -1)
+    {
+      dup2(stdout_copy, STDOUT_FILENO); // Restore original stdout
+      close(stdout_copy);               // Close the saved file descriptor
+    }
+
+    return;
+  }
+
+  // Utilisation d'une boucle for pour itérer sur chaque processus du job
+  for (proc = job->pipeline->head; proc; proc = proc->next)
+  {
     try(pipe(pipefd));
 
-    switch (try(fork()))
+    pid_t pid = try(fork());
+
+    if (pid == 0)
     {
-    case 0:
+      proc->pid = getpid(); // Assigner le pid à Proc
       redirections(proc, pipefd, prev_fd);
       execvp(proc->args->array[0], proc->args->array);
       perror("execvp");
       exit(EXIT_FAILURE);
-
-    default:
+    }
+    else if (pid > 0)
+    {
+      proc->pid = pid;
       if (prev_fd != -1)
         close(prev_fd);
       if (proc->next)
@@ -179,9 +323,10 @@ void execJob(Job *job)
         close(pipefd[1]);
         prev_fd = pipefd[0];
       }
+
       if (!job->bg)
       {
-        waitpid(-1, &status, 0);
+        waitpid(pid, &status, 0);
         if (WIFEXITED(status))
         {
           lastExitCode = WEXITSTATUS(status);
@@ -194,12 +339,17 @@ void execJob(Job *job)
         }
       }
     }
+    else
+    {
+      perror("fork");
+      exit(EXIT_FAILURE);
+    }
   }
 }
 
 int main(void)
 {
-
+  JobList *jobList = newJobList();
   while (true)
   {
     char *line = readCmdLine();
@@ -210,19 +360,11 @@ int main(void)
     Job *job = newJobFromCmdLine(line);
     if (job)
     {
-      if (strcmp(job->pipeline->head->args->array[0], "exit") == 0)
+      if (job->bg)
       {
-        builtinExit(job->pipeline->head->args->size, job->pipeline->head->args->array);
+        addJobToListHead(job, jobList);
       }
-      else if (strcmp(job->pipeline->head->args->array[0], "cd") == 0)
-      {
-        builtinCD(job->pipeline->head->args->size, job->pipeline->head->args->array);
-      }
-      else
-      {
-        execJob(job);
-      }
-      delJob(job);
+      execJob(job, jobList);
     }
   }
   exit(EXIT_SUCCESS);
