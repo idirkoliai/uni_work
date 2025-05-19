@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS test (
 CREATE OR REPLACE FUNCTION check_insert_trigger()
 RETURNS TRIGGER AS $$
 BEGIN
+		 -- 3. Annuler l'insertion avec une exception lorsque a = b
+    IF NEW.a = NEW.b THEN
+        RAISE EXCEPTION 'Insertion impossible : a (%) est égal à b (%).', NEW.a,
+    NEW.b;
+    END IF;
     -- 1. RAISE NOTICE lorsque a est pair
     IF NEW.a % 2 = 0 THEN
         RAISE NOTICE 'La valeur de a (%) est paire.', NEW.a;
@@ -22,10 +27,7 @@ BEGIN
         RETURN NULL;  -- Annule l'insertion
     END IF;
 
-    -- 3. Annuler l'insertion avec une exception lorsque a = b
-    IF NEW.a = NEW.b THEN
-        RAISE EXCEPTION 'Insertion impossible : a (%) est égal à b (%).', NEW.a, NEW.b;
-    END IF;
+    
 
     RETURN NEW; -- Permet l'insertion si aucune condition précédente ne l'annule
 END;
